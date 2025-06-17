@@ -139,8 +139,9 @@ class Game(AbstractGame):
     Game wrapper.
     """
 
-    def __init__(self, seed=None):
-        self.env = gym.make("Breakout-v4")
+    def __init__(self, seed=None, render_mode=None):
+        self.stream = render_mode == "stream"
+        self.env = gym.make("Breakout-v4", render_mode="rgb_array" if self.stream else render_mode)
         if seed is not None:
             self.env.reset(seed=seed)
 
@@ -197,5 +198,10 @@ class Game(AbstractGame):
         """
         Display the game observation.
         """
-        self.env.render()
-        input("Press enter to take a step ")
+        if self.stream:
+            frame = self.env.render()
+            cv2.imshow("Atari", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+            cv2.waitKey(1)
+        else:
+            self.env.render()
+            input("Press enter to take a step ")

@@ -390,8 +390,14 @@ class MuZero:
         muzero_player = muzero_player if muzero_player else self.config.muzero_player
         self_play_worker = self_play.SelfPlay.options(
             num_cpus=0,
-            num_gpus=num_gpus,
-        ).remote(self.checkpoint, self.Game, self.config, numpy.random.randint(10000))
+            num_gpus=num_gpus if not self.config.selfplay_on_gpu else 1,
+        ).remote(
+            self.checkpoint,
+            self.Game,
+            self.config,
+            numpy.random.randint(10000),
+            "stream" if render else None,
+        )
         results = []
         for i in range(num_tests):
             print(f"Testing {i+1}/{num_tests}")
@@ -435,7 +441,7 @@ class MuZero:
         # Load checkpoint
         if checkpoint_path:
             checkpoint_path = pathlib.Path(checkpoint_path)
-            self.checkpoint = torch.load(checkpoint_path)
+            self.checkpoint = torch.load(checkpoint_path, weights_only=False)
             print(f"\nUsing checkpoint from {checkpoint_path}")
 
         # Load replay buffer
@@ -681,7 +687,7 @@ if __name__ == "__main__":
             elif choice == 4:
                 muzero.test(render=True, opponent="human", muzero_player=0)
             elif choice == 5:
-                env = muzero.Game()
+                env = muzero.Game(render_mode="stream")
                 env.reset()
                 env.render()
 

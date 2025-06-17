@@ -1,5 +1,7 @@
 gymnasium[classic_control]
 gymnasium[atari]
+swig
+gymnasium[box2d]
 nevergrad
 numpy
 ray
@@ -8,3 +10,4 @@ tensorboard
 torch
 opencv-python
 pyqt5
+graphviz

@@ -1,9 +1,11 @@
 import datetime
 import pathlib
 
+import cv2
 import gymnasium as gym
 import numpy
 import torch
+import pygame
 
 from .abstract_game import AbstractGame
 
@@ -76,7 +78,7 @@ class MuZeroConfig:
         ### Training
         self.results_path = pathlib.Path(__file__).resolve().parents[1] / "results" / pathlib.Path(__file__).stem / datetime.datetime.now().strftime("%Y-%m-%d--%H-%M-%S")  # Path to store the model weights and TensorBoard logs
         self.save_model = True  # Save the checkpoint in results_path as model.checkpoint
-        self.training_steps = 200000  # Total number of training steps (ie weights update according to a batch)
+        self.training_steps = 1000  # Total number of training steps (ie weights update according to a batch)
         self.batch_size = 64  # Number of parts of games to train on at each training step
         self.checkpoint_interval = 10  # Number of training steps before using the model for self-playing
         self.value_loss_weight = 1  # Scale the value loss to avoid overfitting of the value function, paper recommends 0.25 (See paper appendix Reanalyze)
@@ -100,7 +102,7 @@ class MuZeroConfig:
         self.PER = True  # Prioritized Replay (See paper appendix Training), select in priority the elements in the replay buffer which are unexpected for the network
         self.PER_alpha = 0.5  # How much prioritization is used, 0 corresponding to the uniform case, paper suggests 1
 
-        # Reanalyze (See paper appendix Reanalyse)
+        # Reanalyze (See paper appendix Reanalyze)
         self.use_last_model_value = True  # Use the last model to provide a fresher, stable n-step value (See paper appendix Reanalyze)
         self.reanalyse_on_gpu = False
 
@@ -129,8 +131,10 @@ class Game(AbstractGame):
     Game wrapper.
     """
 
-    def __init__(self, seed=None):
-        self.env = DeterministicLunarLander()
+    def __init__(self, seed=None, render_mode=None):
+        self.stream = render_mode == "stream"
+        env_render_mode = "rgb_array" if self.stream else render_mode
+        self.env = DeterministicLunarLander(render_mode=env_render_mode)
         # self.env = gym.make("LunarLander-v2")
         if seed is not None:
             self.env.reset(seed=seed)
@@ -161,14 +165,14 @@ class Game(AbstractGame):
         """
         return list(range(4))
 
-    def reset(self):
+    def reset(self, seed=None):
         """
         Reset the game for a new game.
 
         Returns:
             Initial observation of the game.
         """
-        return numpy.array([[self.env.reset()]])
+        return numpy.array([[self.env.reset(seed=seed)]])
 
     def close(self):
         """
@@ -180,8 +184,13 @@ class Game(AbstractGame):
         """
         Display the game observation.
         """
-        self.env.render()
-        input("Press enter to take a step ")
+        if self.stream:
+            frame = self.env.render()
+            cv2.imshow("Lunar Lander", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+            cv2.waitKey(1)
+        else:
+            self.env.render()
+            input("Press enter to take a step ")
 
     def action_to_string(self, action_number):
         """
@@ -243,8 +252,8 @@ except ModuleNotFoundError:
     )
 
 import gymnasium as gym
-from gym import spaces
-from gym.utils import seeding, EzPickle
+from gymnasium import spaces
+from gymnasium.utils import seeding, EzPickle
 
 FPS = 50
 SCALE = 30.0  # affects how fast-paced the game is, forces should be adjusted as well
@@ -293,10 +302,13 @@ class DeterministicLunarLander(gym.Env, EzPickle):
 
     continuous = False
 
-    def __init__(self):
+    def __init__(self, render_mode=None):
         EzPickle.__init__(self)
         self.seed()
-        self.viewer = None
+        self.screen = None
+        self.clock = None
+        self.isopen = True
+        self.render_mode = render_mode
 
         self.world = Box2D.b2World()
         self.moon = None
@@ -337,7 +349,9 @@ class DeterministicLunarLander(gym.Env, EzPickle):
         self.world.DestroyBody(self.legs[0])
         self.world.DestroyBody(self.legs[1])
 
-    def reset(self):
+    def reset(self, seed=None):
+        if seed is not None:
+            self.seed(seed)
         self._destroy()
         self.world.contactListener_keepref = ContactDetector(self)
         self.world.contactListener = self.world.contactListener_keepref
@@ -588,64 +602,93 @@ class DeterministicLunarLander(gym.Env, EzPickle):
             reward = +100
         return np.array(state, dtype=np.float32), reward, done, {}
 
-    def render(self, mode="human"):
-        from gym.envs.classic_control import rendering
+    def render(self):
+        if self.render_mode is None:
+            gym.logger.warn(
+                "You are calling render method without specifying any render mode. "
+                "You can specify the render_mode at initialization, "
+                'e.g. gym.make(self.spec.id, render_mode="human")'
+            )
+            return
 
-        if self.viewer is None:
-            self.viewer = rendering.Viewer(VIEWPORT_W, VIEWPORT_H)
-            self.viewer.set_bounds(0, VIEWPORT_W / SCALE, 0, VIEWPORT_H / SCALE)
+        if self.screen is None and self.render_mode == "human":
+            pygame.init()
+            pygame.display.init()
+            self.screen = pygame.display.set_mode((VIEWPORT_W, VIEWPORT_H))
+        if self.clock is None:
+            self.clock = pygame.time.Clock()
+
+        self.surf = pygame.Surface((VIEWPORT_W, VIEWPORT_H))
+        self.surf.fill((0, 0, 0))
 
         for obj in self.particles:
             obj.ttl -= 0.15
             obj.color1 = (
-                max(0.2, 0.2 + obj.ttl),
-                max(0.2, 0.5 * obj.ttl),
-                max(0.2, 0.5 * obj.ttl),
+                min(1, max(0.2, 0.2 + obj.ttl)),
+                min(1, max(0.2, 0.5 * obj.ttl)),
+                min(1, max(0.2, 0.5 * obj.ttl)),
             )
             obj.color2 = (
-                max(0.2, 0.2 + obj.ttl),
-                max(0.2, 0.5 * obj.ttl),
-                max(0.2, 0.5 * obj.ttl),
+                min(1, max(0.2, 0.2 + obj.ttl)),
+                min(1, max(0.2, 0.5 * obj.ttl)),
+                min(1, max(0.2, 0.5 * obj.ttl)),
             )
 
         self._clean_particles(False)
 
         for p in self.sky_polys:
-            self.viewer.draw_polygon(p, color=(0, 0, 0))
+            path = [(v[0] * SCALE, VIEWPORT_H - v[1] * SCALE) for v in p]
+            pygame.draw.polygon(self.surf, color=(0, 0, 0), points=path)
 
         for obj in self.particles + self.drawlist:
             for f in obj.fixtures:
                 trans = f.body.transform
                 if type(f.shape) is circleShape:
-                    t = rendering.Transform(translation=trans * f.shape.pos)
-                    self.viewer.draw_circle(
-                        f.shape.radius, 20, color=obj.color1
-                    ).add_attr(t)
-                    self.viewer.draw_circle(
-                        f.shape.radius, 20, color=obj.color2, filled=False, linewidth=2
-                    ).add_attr(t)
+                    pos = trans * f.shape.pos
+                    pygame.draw.circle(
+                        self.surf,
+                        color=tuple(int(c * 255) for c in obj.color1),
+                        center=(pos[0] * SCALE, VIEWPORT_H - pos[1] * SCALE),
+                        radius=f.shape.radius * SCALE,
+                    )
+                    pygame.draw.circle(
+                        self.surf,
+                        color=tuple(int(c * 255) for c in obj.color2),
+                        center=(pos[0] * SCALE, VIEWPORT_H - pos[1] * SCALE),
+                        radius=f.shape.radius * SCALE,
+                        width=2,
+                    )
                 else:
                     path = [trans * v for v in f.shape.vertices]
-                    self.viewer.draw_polygon(path, color=obj.color1)
-                    path.append(path[0])
-                    self.viewer.draw_polyline(path, color=obj.color2, linewidth=2)
+                    path = [(v[0] * SCALE, VIEWPORT_H - v[1] * SCALE) for v in path]
+                    pygame.draw.polygon(self.surf, color=tuple(int(c * 255) for c in obj.color1), points=path)
+                    pygame.draw.lines(self.surf, color=tuple(int(c * 255) for c in obj.color2), closed=True, points=path, width=2)
 
         for x in [self.helipad_x1, self.helipad_x2]:
             flagy1 = self.helipad_y
             flagy2 = flagy1 + 50 / SCALE
-            self.viewer.draw_polyline([(x, flagy1), (x, flagy2)], color=(1, 1, 1))
-            self.viewer.draw_polygon(
-                [
-                    (x, flagy2),
-                    (x, flagy2 - 10 / SCALE),
-                    (x + 25 / SCALE, flagy2 - 5 / SCALE),
-                ],
-                color=(0.8, 0.8, 0),
+            pygame.draw.line(self.surf, color=(255, 255, 255), start_pos=(x * SCALE, VIEWPORT_H - flagy1 * SCALE), end_pos=(x * SCALE, VIEWPORT_H - flagy2 * SCALE))
+            
+            flag_points = [
+                (x * SCALE, VIEWPORT_H - flagy2 * SCALE),
+                (x * SCALE, VIEWPORT_H - (flagy2 - 10 / SCALE) * SCALE),
+                ((x + 25 / SCALE) * SCALE, VIEWPORT_H - (flagy2 - 5 / SCALE) * SCALE),
+            ]
+            pygame.draw.polygon(self.surf, color=(204, 204, 0), points=flag_points)
+
+
+        if self.render_mode == "human":
+            self.screen.blit(self.surf, (0, 0))
+            pygame.event.pump()
+            self.clock.tick(self.metadata["video.frames_per_second"])
+            pygame.display.flip()
+        elif self.render_mode == "rgb_array":
+            return np.transpose(
+                np.array(pygame.surfarray.pixels3d(self.surf)), axes=(1, 0, 2)
             )
 
-        return self.viewer.render(return_rgb_array=mode == "rgb_array")
-
     def close(self):
-        if self.viewer is not None:
-            self.viewer.close()
-            self.viewer = None
+        if self.screen is not None:
+            pygame.display.quit()
+            pygame.quit()
+            self.isopen = False

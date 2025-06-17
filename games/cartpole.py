@@ -1,6 +1,7 @@
 import datetime
 import pathlib
 
+import cv2
 import gymnasium as gym
 import numpy
 import torch
@@ -32,7 +33,7 @@ class MuZeroConfig:
 
         ### Self-Play
         self.num_workers = 1  # Number of simultaneous threads/workers self-playing to feed the replay buffer
-        self.selfplay_on_gpu = False
+        self.selfplay_on_gpu = True
         self.max_moves = 500  # Maximum number of moves if game is not finished before
         self.num_simulations = 50  # Number of future moves self-simulated
         self.discount = 0.997  # Chronological discount of the reward
@@ -133,8 +134,9 @@ class Game(AbstractGame):
     Game wrapper.
     """
 
-    def __init__(self, seed=None):
-        self.env = gym.make("CartPole-v1")
+    def __init__(self, seed=None, render_mode=None):
+        self.stream = render_mode == "stream"
+        self.env = gym.make("CartPole-v1", render_mode="rgb_array" if self.stream else render_mode)
         if seed is not None:
             self.env.reset(seed=seed)
 
@@ -184,8 +186,13 @@ class Game(AbstractGame):
         """
         Display the game observation.
         """
-        self.env.render()
-        input("Press enter to take a step ")
+        if self.stream:
+            frame = self.env.render()
+            cv2.imshow("CartPole", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+            cv2.waitKey(1)
+        else:
+            self.env.render()
+            input("Press enter to take a step ")
 
     def action_to_string(self, action_number):
         """

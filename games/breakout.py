@@ -1,16 +1,17 @@
 import datetime
 import pathlib
 
-import gym
+import gymnasium as gym
 import numpy
 import torch
+import cv2
 
 from .abstract_game import AbstractGame
 
 try:
-    import cv2
+    import ale_py
 except ModuleNotFoundError:
-    raise ModuleNotFoundError('Please run "pip install gym[atari]"')
+    raise ModuleNotFoundError('Please run "pip install gymnasium[atari]"')
 
 
 class MuZeroConfig:
@@ -141,7 +142,7 @@ class Game(AbstractGame):
     def __init__(self, seed=None):
         self.env = gym.make("Breakout-v4")
         if seed is not None:
-            self.env.seed(seed)
+            self.env.reset(seed=seed)
 
     def step(self, action):
         """
@@ -153,7 +154,8 @@ class Game(AbstractGame):
         Returns:
             The new observation, the reward and a boolean if the game has ended.
         """
-        observation, reward, done, _ = self.env.step(action)
+        observation, reward, terminated, truncated, _ = self.env.step(action)
+        done = terminated or truncated
         observation = cv2.resize(observation, (96, 96), interpolation=cv2.INTER_AREA)
         observation = numpy.asarray(observation, dtype="float32") / 255.0
         observation = numpy.moveaxis(observation, -1, 0)
@@ -179,7 +181,7 @@ class Game(AbstractGame):
         Returns:
             Initial observation of the game.
         """
-        observation = self.env.reset()
+        observation, info = self.env.reset()
         observation = cv2.resize(observation, (96, 96), interpolation=cv2.INTER_AREA)
         observation = numpy.asarray(observation, dtype="float32") / 255.0
         observation = numpy.moveaxis(observation, -1, 0)

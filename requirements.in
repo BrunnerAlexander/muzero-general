@@ -1,0 +1,10 @@
+gymnasium[classic_control]
+gymnasium[atari]
+nevergrad
+numpy
+ray
+seaborn
+tensorboard
+torch
+opencv-python
+pyqt5

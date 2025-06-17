@@ -1,7 +1,7 @@
 import datetime
 import pathlib
 
-import gym
+import gymnasium as gym
 import numpy
 import torch
 
@@ -133,7 +133,7 @@ class Game(AbstractGame):
         self.env = DeterministicLunarLander()
         # self.env = gym.make("LunarLander-v2")
         if seed is not None:
-            self.env.seed(seed)
+            self.env.reset(seed=seed)
 
     def step(self, action):
         """
@@ -242,7 +242,7 @@ except ModuleNotFoundError:
         'swig librairy and box2d-py are required to run lunarlander.\n\nPlease install swig with "sudo apt install swig" on Ubuntu or "brew install swig" on mac.\nThen run "pip install box2d-py".\nFor more detailed instructions: https://github.com/openai/gym'
     )
 
-import gym
+import gymnasium as gym
 from gym import spaces
 from gym.utils import seeding, EzPickle
 

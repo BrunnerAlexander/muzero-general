@@ -1,7 +1,7 @@
 import datetime
 import pathlib
 
-import gym
+import gymnasium as gym
 import numpy
 import torch
 
@@ -142,7 +142,7 @@ class Game(AbstractGame):
         self.env = gym.make("MiniGrid-Empty-Random-6x6-v0")
         self.env = gym_minigrid.wrappers.ImgObsWrapper(self.env)
         if seed is not None:
-            self.env.seed(seed)
+            self.env.reset(seed=seed)
 
     def step(self, action):
         """
@@ -154,7 +154,8 @@ class Game(AbstractGame):
         Returns:
             The new observation, the reward and a boolean if the game has ended.
         """
-        observation, reward, done, _ = self.env.step(action)
+        observation, reward, terminated, truncated, _ = self.env.step(action)
+        done = terminated or truncated
         return numpy.array(observation), reward, done
 
     def legal_actions(self):
